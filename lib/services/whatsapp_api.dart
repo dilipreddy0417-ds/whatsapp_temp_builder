@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:mime/mime.dart';
@@ -11,8 +12,9 @@ class WhatsAppApiService {
   final String phoneNumberId = Constants.metaWAPhoneNumberId;
   final String appId = Constants.appId;
 
-  // Upload media to phone (returns media ID)
-  Future<String> uploadMediaToPhone(File file, String messagingProduct) async {
+  // ========== MEDIA UPLOAD FOR SENDING MESSAGES ==========
+  // Use this for uploading media to be used in messages (not templates)
+  Future<String> uploadMediaForMessage(File file, String messagingProduct) async {
     var request = http.MultipartRequest(
       'POST',
       Uri.parse('https://graph.facebook.com/v23.0/$phoneNumberId/media'),
@@ -31,13 +33,14 @@ class WhatsAppApiService {
     var responseBody = await response.stream.bytesToString();
     if (response.statusCode == 200) {
       final data = jsonDecode(responseBody);
-      return data['id'];
+      return data['id']; // Returns media ID for sending messages
     } else {
       throw Exception('Media upload failed: $responseBody');
     }
   }
 
-  // Create an upload session for an app (returns session ID)
+  // ========== RESUMABLE UPLOAD FOR TEMPLATE HEADERS ==========
+  // Step 1: Create upload session
   Future<String> createUploadSession({
     required String fileName,
     required int fileLength,
@@ -56,53 +59,61 @@ class WhatsAppApiService {
         'file_type': fileType,
       }),
     );
+    
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return data['id'];
+      return data['id']; // Returns upload session ID
     } else {
       throw Exception('Create upload session failed: ${response.body}');
     }
   }
 
-  // Upload the actual file bytes to the session and get the handle
+  // Step 2: Upload file to session and get handle
   Future<String> uploadFileToSession(String sessionId, File file) async {
     final url = Uri.parse('https://graph.facebook.com/v23.0/$sessionId');
-    var request = http.MultipartRequest('POST', url);
-    request.headers['Authorization'] = 'Bearer $accessToken';
-    request.headers['file_offset'] = '0';
-    final mimeType = lookupMimeType(file.path) ?? 'application/octet-stream';
-    request.files.add(
-      await http.MultipartFile.fromPath(
-        'file',
-        file.path,
-        contentType: MediaType.parse(mimeType),
-      ),
+    
+    // Read file as bytes
+    final fileBytes = await file.readAsBytes();
+    
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+        'file_offset': '0',
+        'Content-Type': 'application/octet-stream',
+      },
+      body: fileBytes,
     );
-    var response = await request.send();
-    var responseBody = await response.stream.bytesToString();
+    
     if (response.statusCode == 200) {
-      final data = jsonDecode(responseBody);
-      return data['h'];
+      final data = jsonDecode(response.body);
+      return data['h']; // Returns the handle (e.g., "4:4:MTAwMDAyMTY4OC5wbmc=...")
     } else {
-      throw Exception('File upload to session failed: $responseBody');
+      throw Exception('File upload to session failed: ${response.body}');
     }
   }
 
-  // Convenience method: upload an image and get the handle for templates
-  Future<String> uploadImageAndGetHandle(File imageFile) async {
+  // Convenience method: complete resumable upload process
+  Future<String> uploadImageForTemplateHeader(File imageFile) async {
     final fileName = imageFile.path.split('/').last;
     final fileLength = await imageFile.length();
     final mimeType = lookupMimeType(imageFile.path) ?? 'image/jpeg';
+    
+    debugPrint('📤 Creating upload session for: $fileName');
     final sessionId = await createUploadSession(
       fileName: fileName,
       fileLength: fileLength,
       fileType: mimeType,
     );
+    
+    debugPrint('📤 Uploading file to session: $sessionId');
     final handle = await uploadFileToSession(sessionId, imageFile);
+    
+    debugPrint('✅ Got header handle: $handle');
     return handle;
   }
 
-  // Fetch all templates from WhatsApp Business Account
+  // ========== FETCH TEMPLATES ==========
   Future<List<Map<String, dynamic>>> getTemplates() async {
     final url = Uri.parse(
         'https://graph.facebook.com/v23.0/$businessAccountId/message_templates');
@@ -118,7 +129,7 @@ class WhatsAppApiService {
     }
   }
 
-  // Create a message template
+  // ========== CREATE TEMPLATE ==========
   Future<Map<String, dynamic>> createTemplate(
       Map<String, dynamic> templateData) async {
     final url = Uri.parse(
@@ -138,7 +149,7 @@ class WhatsAppApiService {
     }
   }
 
-  // Delete template by numeric ID
+  // ========== DELETE TEMPLATE ==========
   Future<void> deleteTemplate(String templateId) async {
     final url = Uri.parse('https://graph.facebook.com/v23.0/$templateId');
     final response = await http.delete(
@@ -150,7 +161,7 @@ class WhatsAppApiService {
     }
   }
 
-  // Fetch a single template status by ID
+  // ========== FETCH TEMPLATE STATUS ==========
   Future<Map<String, dynamic>> getTemplateStatus(String templateId) async {
     final url = Uri.parse('https://graph.facebook.com/v23.0/$templateId');
     final response = await http.get(
@@ -164,7 +175,7 @@ class WhatsAppApiService {
     }
   }
 
-  // Send a template message (low‑level, components must be built manually)
+  // ========== SEND TEMPLATE MESSAGE ==========
   Future<void> sendTemplateMessage({
     required String to,
     required String templateName,
@@ -194,56 +205,5 @@ class WhatsAppApiService {
     if (response.statusCode != 200) {
       throw Exception('Send failed: ${response.body}');
     }
-  }
-
-  // NEW: Convenience method to send a template message with header media and body variables
-  Future<void> sendTemplateMessageWithMedia({
-    required String to,
-    required String templateName,
-    required String languageCode,
-    String? headerMediaType, // e.g., 'IMAGE', 'VIDEO', 'DOCUMENT'
-    String? mediaId, // ID from uploadMediaToPhone
-    String? mediaLink, // public URL (if you don't have an ID)
-    List<String> bodyVariables = const [],
-  }) async {
-    List<Map<String, dynamic>> components = [];
-
-    // Header component (if media is provided)
-    if (headerMediaType != null && (mediaId != null || mediaLink != null)) {
-      Map<String, dynamic> mediaObj = {};
-      if (mediaId != null && mediaId.isNotEmpty) {
-        mediaObj = {"id": mediaId};
-      } else if (mediaLink != null && mediaLink.isNotEmpty) {
-        mediaObj = {"link": mediaLink};
-      }
-
-      components.add({
-        "type": "header", // Must be lowercase
-        "parameters": [
-          {
-            "type": headerMediaType.toLowerCase(),
-            headerMediaType.toLowerCase(): mediaObj,
-          }
-        ],
-      });
-    }
-
-    // Body component with variables
-    if (bodyVariables.isNotEmpty) {
-      List<Map<String, dynamic>> bodyParams =
-          bodyVariables.map((val) => {"type": "text", "text": val}).toList();
-      components.add({
-        "type": "body",
-        "parameters": bodyParams,
-      });
-    }
-
-    // Call the existing low-level send method with the constructed components
-    await sendTemplateMessage(
-      to: to,
-      templateName: templateName,
-      languageCode: languageCode,
-      components: components,
-    );
   }
 }

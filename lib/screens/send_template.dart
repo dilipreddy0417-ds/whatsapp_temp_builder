@@ -131,15 +131,15 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
               SizedBox(height: 12),
               Text('Examples:', style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 4),
-              Text('*John* → **John**',
+              Text('*Dileep* → **Dileep**',
                   style: TextStyle(fontFamily: 'monospace')),
-              Text('_John_ → *John*',
+              Text('_Dileep_ → *Dileep*',
                   style: TextStyle(fontFamily: 'monospace')),
               SizedBox(height: 8),
               Text('You can also combine:',
                   style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 4),
-              Text('_*John*_ → ***John***',
+              Text('_*Dileep*_ → ***Dileep***',
                   style: TextStyle(fontFamily: 'monospace')),
             ],
           ),
@@ -178,13 +178,42 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
         return;
       }
 
-      await _whatsapp.sendTemplateMessageWithMedia(
-        to: cleanPhone, // use the cleaned number
+      // Build components according to WhatsApp API requirements
+      final List<Map<String, dynamic>> components = [];
+
+      // Add header component if template has media header
+      if (widget.template.headerMediaType != null &&
+          widget.template.headerMediaType != 'NONE' &&
+          mediaId != null) {
+        components.add({
+          'type': 'header',
+          'parameters': [
+            {
+              'type': widget.template.headerMediaType!.toLowerCase(),
+              widget.template.headerMediaType!.toLowerCase(): {'id': mediaId}
+            }
+          ]
+        });
+        debugPrint('✅ Added header component with media ID: $mediaId');
+      }
+
+      // Add body component if there are variables
+      if (bodyVars.isNotEmpty) {
+        components.add({
+          'type': 'body',
+          'parameters':
+              bodyVars.map((val) => {'type': 'text', 'text': val}).toList()
+        });
+        debugPrint('✅ Added body component with vars: $bodyVars');
+      }
+
+      debugPrint('📦 Final components: $components');
+
+      await _whatsapp.sendTemplateMessage(
+        to: cleanPhone,
         templateName: widget.template.name,
         languageCode: widget.template.language,
-        headerMediaType: widget.template.headerMediaType,
-        mediaId: mediaId,
-        bodyVariables: bodyVars,
+        components: components,
       );
 
       if (mounted) {
@@ -264,8 +293,7 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
                         maxLines: 3,
                         minLines: 1,
                         decoration: InputDecoration(
-                          hintText:
-                              'Enter value for $varKey (format with *, _, ~, `)',
+                          hintText: 'Enter value for $varKey',
                           border: const OutlineInputBorder(),
                           suffixIcon: isFocused
                               ? PopupMenuButton<String>(

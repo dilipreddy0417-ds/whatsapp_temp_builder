@@ -122,19 +122,23 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     String? headerMediaId;
 
     try {
+      // For image header: upload using Resumable Upload to get handle (for template)
+      // and also upload to phone media endpoint to get media ID (for sending)
       if (_headerType == 'IMAGE' && _headerFile != null) {
-        debugPrint('📤 Uploading image to get handle...');
-        headerHandle = await _whatsapp.uploadImageAndGetHandle(_headerFile!);
+        debugPrint('📤 Uploading image via Resumable Upload to get handle...');
+        headerHandle =
+            await _whatsapp.uploadImageForTemplateHeader(_headerFile!);
         debugPrint('📸 Header handle obtained: $headerHandle');
 
         debugPrint('📤 Uploading same image to phone media endpoint...');
         headerMediaId =
-            await _whatsapp.uploadMediaToPhone(_headerFile!, 'whatsapp');
+            await _whatsapp.uploadMediaForMessage(_headerFile!, 'whatsapp');
         debugPrint('📸 Permanent media ID obtained: $headerMediaId');
       }
 
       List<Map<String, dynamic>> components = [];
 
+      // Header component for template creation
       if (_headerType == 'TEXT' &&
           _headerText != null &&
           _headerText!.isNotEmpty) {
@@ -144,15 +148,19 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           'text': _headerText,
         });
       } else if (_headerType == 'IMAGE' && headerHandle != null) {
+        // CRITICAL: header_handle must be inside an array
         components.add({
           'type': 'HEADER',
           'format': 'IMAGE',
           'example': {
-            'header_handle': [headerHandle]
+            'header_handle': [headerHandle] // Array, not a string
           },
         });
+        debugPrint(
+            '📸 Added header component with handle array: [$headerHandle]');
       }
 
+      // Body component with example values
       Map<String, dynamic> bodyComponent = {
         'type': 'BODY',
         'text': _bodyController.text,
@@ -173,6 +181,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       }
       components.add(bodyComponent);
 
+      // Footer component
       if (_footerController.text.isNotEmpty) {
         components.add({
           'type': 'FOOTER',
@@ -180,6 +189,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         });
       }
 
+      // Buttons component
       if (_buttons.isNotEmpty) {
         components.add({
           'type': 'BUTTONS',
@@ -199,6 +209,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       final result = await _whatsapp.createTemplate(templateData);
       final templateId = result['id'];
 
+      // Fetch actual status from WhatsApp
       String actualStatus = 'pending';
       try {
         final statusResult = await _whatsapp.getTemplateStatus(templateId);
@@ -226,7 +237,8 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         headerMediaUrl: null,
         headerText: _headerText,
         sampleContent: null,
-        headerMediaId: headerMediaId,
+        headerMediaId:
+            headerMediaId, // Store the permanent media ID for sending
         headerMediaType: _headerType,
       );
 
@@ -234,7 +246,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       await _supabase.insertTemplate(newTemplate);
 
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context); // close loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('✅ Template submitted for approval')),
         );
@@ -243,7 +255,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     } catch (e, stack) {
       debugPrint('❌ Error during submission: $e\n$stack');
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context); // close loading dialog
         _showErrorDialog(e.toString());
       }
     }
@@ -275,7 +287,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.teal[100],
         title: Text(widget.template == null ? 'New Template' : 'Edit Template'),
       ),
       body: Form(
