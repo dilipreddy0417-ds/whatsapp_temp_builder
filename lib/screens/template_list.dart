@@ -257,7 +257,7 @@ class _TemplateListScreenState extends State<TemplateListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.teal[100],
+        backgroundColor: Colors.teal[200],
         title: const Text('WhatsApp Templates'),
         actions: [
           IconButton(

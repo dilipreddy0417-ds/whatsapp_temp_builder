@@ -60,7 +60,7 @@ class _ButtonEditorState extends State<ButtonEditor> {
                 children: [
                   // Button type dropdown with friendly names
                   DropdownButtonFormField<String>(
-                    value: btn['type'],
+                    initialValue: btn['type'],
                     items: buttonTypeMap.entries.map((e) {
                       return DropdownMenuItem(
                         value: e.value,

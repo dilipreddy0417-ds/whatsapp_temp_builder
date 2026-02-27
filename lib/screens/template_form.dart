@@ -168,6 +168,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       if (variables.isNotEmpty) {
         if (_sampleVariables.isEmpty) {
           if (mounted) Navigator.pop(context);
+          // ignore: use_build_context_synchronously
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
                 content:
@@ -304,7 +305,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _category,
+              initialValue: _category,
               items: Constants.categories
                   .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                   .toList(),
@@ -313,7 +314,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _language,
+              initialValue: _language,
               items: Constants.languages
                   .map((l) => DropdownMenuItem(value: l, child: Text(l)))
                   .toList(),
@@ -326,7 +327,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _headerType,
+                    initialValue: _headerType,
                     items: Constants.headerTypes
                         .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                         .toList(),

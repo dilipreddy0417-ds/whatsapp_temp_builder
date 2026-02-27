@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/template_list.dart';
+import 'screens/internal_tab.dart';
 import 'utils/constants.dart';
 
 Future<void> main() async {
@@ -31,11 +32,31 @@ class MyApp extends StatelessWidget {
         appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
         cardTheme: CardThemeData(
           elevation: 2,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
-      home: const TemplateListScreen(),
+      home: DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Template Manager'),
+            bottom: const TabBar(
+              tabs: [
+                Tab(text: 'WhatsApp Templates'),
+                Tab(text: 'Template Groups'),
+              ],
+            ),
+          ),
+          body: const TabBarView(
+            children: [
+              TemplateListScreen(),
+              InternalGroupsTab(),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
