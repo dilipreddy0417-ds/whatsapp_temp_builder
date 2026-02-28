@@ -41,6 +41,7 @@ class MyApp extends StatelessWidget {
         length: 2,
         child: Scaffold(
           appBar: AppBar(
+            backgroundColor: Colors.teal[100],
             title: const Text('Template Manager'),
             bottom: const TabBar(
               tabs: [
