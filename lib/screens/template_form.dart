@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/template.dart';
 import '../services/supabase_service.dart';
 import '../services/whatsapp_api.dart';
@@ -27,11 +28,19 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   String _headerType = 'NONE';
   String? _headerText;
   File? _headerFile;
+  String? _headerFileName;
   List<Map<String, dynamic>> _buttons = [];
   final Map<String, String> _sampleVariables = {};
 
   final SupabaseService _supabase = SupabaseService();
   final WhatsAppApiService _whatsapp = WhatsAppApiService();
+
+  // Colors
+  final Color primaryColor = Colors.teal;
+  final Color accentColor = Colors.orange;
+  final Color backgroundColor = Colors.grey[50]!;
+  final Color cardColor = Colors.white;
+  final Color borderColor = Colors.grey[300]!;
 
   @override
   void initState() {
@@ -93,17 +102,74 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Submission Failed'),
+        titleTextStyle: const TextStyle(
+            color: Colors.red, fontWeight: FontWeight.bold), // Fixed
         content: SingleChildScrollView(
           child: SelectableText(friendlyMessage),
         ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.red
+                  .withValues(alpha: 0.1), // Fixed: replaced withOpacity
+              foregroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
             child: const Text('OK'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _pickMedia() async {
+    if (_headerType == 'IMAGE') {
+      final picker = ImagePicker();
+      final image = await picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        setState(() {
+          _headerFile = File(image.path);
+          _headerFileName = image.name;
+        });
+      }
+    } else if (_headerType == 'VIDEO') {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        allowMultiple: false,
+      );
+
+      if (result != null) {
+        setState(() {
+          _headerFile = File(result.files.single.path!);
+          _headerFileName = result.files.single.name;
+        });
+      }
+    } else if (_headerType == 'DOCUMENT') {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: [
+          'pdf',
+          'doc',
+          'docx',
+          'ppt',
+          'pptx',
+          'xls',
+          'xlsx',
+          'txt'
+        ],
+        allowMultiple: false,
+      );
+
+      if (result != null) {
+        setState(() {
+          _headerFile = File(result.files.single.path!);
+          _headerFileName = result.files.single.name;
+        });
+      }
+    }
   }
 
   Future<void> _submit() async {
@@ -112,33 +178,74 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
     final variables = extractVariables(_bodyController.text);
 
+    // Show loading dialog
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+      builder: (_) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey
+                    .withValues(alpha: 0.3), // Fixed: replaced withOpacity
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Colors.teal),
+              const SizedBox(height: 16),
+              Text(
+                'Submitting template...',
+                style: TextStyle(color: Colors.grey[700]),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
 
     String? headerHandle;
     String? headerMediaId;
 
     try {
-      // For image header: upload using Resumable Upload to get handle (for template)
-      // and also upload to phone media endpoint to get media ID (for sending)
-      if (_headerType == 'IMAGE' && _headerFile != null) {
-        debugPrint('📤 Uploading image via Resumable Upload to get handle...');
-        headerHandle =
-            await _whatsapp.uploadImageForTemplateHeader(_headerFile!);
-        debugPrint('📸 Header handle obtained: $headerHandle');
+      if (_headerType != 'NONE' &&
+          _headerType != 'TEXT' &&
+          _headerFile != null) {
+        debugPrint(
+            '📤 Uploading ${_headerType.toLowerCase()} via Resumable Upload to get handle...');
 
-        debugPrint('📤 Uploading same image to phone media endpoint...');
-        headerMediaId =
-            await _whatsapp.uploadMediaForMessage(_headerFile!, 'whatsapp');
+        if (_headerType == 'IMAGE') {
+          headerHandle =
+              await _whatsapp.uploadImageForTemplateHeader(_headerFile!);
+          headerMediaId =
+              await _whatsapp.uploadMediaForMessage(_headerFile!, 'whatsapp');
+        } else if (_headerType == 'VIDEO') {
+          headerHandle =
+              await _whatsapp.uploadVideoForTemplateHeader(_headerFile!);
+          headerMediaId =
+              await _whatsapp.uploadMediaForMessage(_headerFile!, 'whatsapp');
+        } else if (_headerType == 'DOCUMENT') {
+          headerHandle =
+              await _whatsapp.uploadDocumentForTemplateHeader(_headerFile!);
+          headerMediaId =
+              await _whatsapp.uploadMediaForMessage(_headerFile!, 'whatsapp');
+        }
+
+        debugPrint('📸 Header handle obtained: $headerHandle');
         debugPrint('📸 Permanent media ID obtained: $headerMediaId');
       }
 
       List<Map<String, dynamic>> components = [];
 
-      // Header component for template creation
       if (_headerType == 'TEXT' &&
           _headerText != null &&
           _headerText!.isNotEmpty) {
@@ -147,20 +254,20 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           'format': 'TEXT',
           'text': _headerText,
         });
-      } else if (_headerType == 'IMAGE' && headerHandle != null) {
-        // CRITICAL: header_handle must be inside an array
+      } else if (_headerType != 'NONE' &&
+          _headerType != 'TEXT' &&
+          headerHandle != null) {
         components.add({
           'type': 'HEADER',
-          'format': 'IMAGE',
+          'format': _headerType,
           'example': {
-            'header_handle': [headerHandle] // Array, not a string
+            'header_handle': [headerHandle]
           },
         });
         debugPrint(
             '📸 Added header component with handle array: [$headerHandle]');
       }
 
-      // Body component with example values
       Map<String, dynamic> bodyComponent = {
         'type': 'BODY',
         'text': _bodyController.text,
@@ -168,12 +275,18 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       if (variables.isNotEmpty) {
         if (_sampleVariables.isEmpty) {
           if (mounted) Navigator.pop(context);
-          // ignore: use_build_context_synchronously
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content:
-                    Text('Please provide sample values for all variables')),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                    'Please provide sample values for all variables'),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            );
+          }
           return;
         }
         bodyComponent['example'] = {
@@ -182,7 +295,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       }
       components.add(bodyComponent);
 
-      // Footer component
       if (_footerController.text.isNotEmpty) {
         components.add({
           'type': 'FOOTER',
@@ -190,7 +302,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         });
       }
 
-      // Buttons component
       if (_buttons.isNotEmpty) {
         components.add({
           'type': 'BUTTONS',
@@ -210,7 +321,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       final result = await _whatsapp.createTemplate(templateData);
       final templateId = result['id'];
 
-      // Fetch actual status from WhatsApp
       String actualStatus = 'pending';
       try {
         final statusResult = await _whatsapp.getTemplateStatus(templateId);
@@ -238,8 +348,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         headerMediaUrl: null,
         headerText: _headerText,
         sampleContent: null,
-        headerMediaId:
-            headerMediaId, // Store the permanent media ID for sending
+        headerMediaId: headerMediaId,
         headerMediaType: _headerType,
       );
 
@@ -247,26 +356,24 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       await _supabase.insertTemplate(newTemplate);
 
       if (mounted) {
-        Navigator.pop(context); // close loading dialog
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Template submitted for approval')),
+          SnackBar(
+            content: const Text('✅ Template submitted for approval'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
         Navigator.pop(context, true);
       }
     } catch (e, stack) {
       debugPrint('❌ Error during submission: $e\n$stack');
       if (mounted) {
-        Navigator.pop(context); // close loading dialog
+        Navigator.pop(context);
         _showErrorDialog(e.toString());
       }
-    }
-  }
-
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() => _headerFile = File(image.path));
     }
   }
 
@@ -274,10 +381,22 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     final vars = extractVariables(_bodyController.text);
     if (vars.isEmpty) return [];
     return vars.map((v) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
         child: TextFormField(
-          decoration: InputDecoration(labelText: 'Sample for $v'),
+          decoration: InputDecoration(
+            labelText: 'Sample for $v',
+            labelStyle: TextStyle(color: Colors.teal[700]),
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.all(12),
+            prefixIcon:
+                Icon(Icons.text_fields, color: Colors.teal[300], size: 20),
+          ),
           onChanged: (val) => _sampleVariables[v] = val,
         ),
       );
@@ -288,107 +407,638 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.template == null ? 'New Template' : 'Edit Template'),
+        title: Text(
+          widget.template == null ? 'Create New Template' : 'Edit Template',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+        ),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Template Name',
-                helperText: 'Lowercase letters, numbers, underscores only',
-              ),
-              validator: _validateTemplateName,
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _category,
-              items: Constants.categories
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
-              onChanged: (v) => setState(() => _category = v!),
-              decoration: const InputDecoration(labelText: 'Category'),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _language,
-              items: Constants.languages
-                  .map((l) => DropdownMenuItem(value: l, child: Text(l)))
-                  .toList(),
-              onChanged: (v) => setState(() => _language = v!),
-              decoration: const InputDecoration(labelText: 'Language'),
-            ),
-            const SizedBox(height: 24),
-            const Text('Header', style: TextStyle(fontWeight: FontWeight.bold)),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _headerType,
-                    items: Constants.headerTypes
-                        .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _headerType = v!),
+      body: Container(
+        color: backgroundColor,
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // Template Name Card
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: primaryColor.withValues(
+                                  alpha: 0.1), // Fixed: replaced withOpacity
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.label,
+                                color: primaryColor, size: 20),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Template Name',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _nameController,
+                        decoration: InputDecoration(
+                          hintText: 'e.g., welcome_message',
+                          helperText:
+                              'Lowercase letters, numbers, underscores only',
+                          helperStyle:
+                              TextStyle(color: Colors.grey[600], fontSize: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide:
+                                BorderSide(color: primaryColor, width: 2),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          prefixIcon: Icon(Icons.drive_file_rename_outline,
+                              color: primaryColor),
+                        ),
+                        validator: _validateTemplateName,
+                      ),
+                    ],
                   ),
                 ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Category & Language Card
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: primaryColor.withValues(
+                                  alpha: 0.1), // Fixed: replaced withOpacity
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.category,
+                                color: primaryColor, size: 20),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Category & Language',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        initialValue: _category,
+                        items: Constants.categories
+                            .map((c) => DropdownMenuItem(
+                                  value: c,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        c == 'MARKETING'
+                                            ? Icons.campaign
+                                            : c == 'UTILITY'
+                                                ? Icons.settings
+                                                : Icons.security,
+                                        size: 18,
+                                        color: primaryColor,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(c),
+                                    ],
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: (v) => setState(() => _category = v!),
+                        decoration: InputDecoration(
+                          labelText: 'Category',
+                          labelStyle: TextStyle(color: primaryColor),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide:
+                                BorderSide(color: primaryColor, width: 2),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: _language,
+                        items: Constants.languages
+                            .map((l) => DropdownMenuItem(
+                                  value: l,
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.language,
+                                          size: 18, color: primaryColor),
+                                      const SizedBox(width: 8),
+                                      Text(l),
+                                    ],
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: (v) => setState(() => _language = v!),
+                        decoration: InputDecoration(
+                          labelText: 'Language',
+                          labelStyle: TextStyle(color: primaryColor),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide:
+                                BorderSide(color: primaryColor, width: 2),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Header Card
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: primaryColor.withValues(
+                                  alpha: 0.1), // Fixed: replaced withOpacity
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.image,
+                                color: primaryColor, size: 20),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Header',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _headerType,
+                              style: TextStyle(
+                                  color: Colors.grey[700], fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        initialValue: _headerType,
+                        items: Constants.headerTypes
+                            .map((t) => DropdownMenuItem(
+                                  value: t,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        t == 'NONE'
+                                            ? Icons.hide_source
+                                            : t == 'TEXT'
+                                                ? Icons.text_fields
+                                                : t == 'IMAGE'
+                                                    ? Icons.image
+                                                    : t == 'VIDEO'
+                                                        ? Icons.video_library
+                                                        : Icons
+                                                            .insert_drive_file,
+                                        size: 18,
+                                        color: primaryColor,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(t),
+                                    ],
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: (v) => setState(() => _headerType = v!),
+                        decoration: InputDecoration(
+                          labelText: 'Header Type',
+                          labelStyle: TextStyle(color: primaryColor),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide:
+                                BorderSide(color: primaryColor, width: 2),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                      ),
+                      if (_headerType == 'TEXT') ...[
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          onChanged: (v) => _headerText = v,
+                          decoration: InputDecoration(
+                            labelText: 'Header Text',
+                            labelStyle: TextStyle(color: primaryColor),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: borderColor),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: borderColor),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide:
+                                  BorderSide(color: primaryColor, width: 2),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                            prefixIcon:
+                                Icon(Icons.text_fields, color: primaryColor),
+                          ),
+                        ),
+                      ],
+                      if (_headerType == 'IMAGE' ||
+                          _headerType == 'VIDEO' ||
+                          _headerType == 'DOCUMENT') ...[
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: _pickMedia,
+                          icon: Icon(
+                            _headerType == 'IMAGE'
+                                ? Icons.image
+                                : _headerType == 'VIDEO'
+                                    ? Icons.video_library
+                                    : Icons.insert_drive_file,
+                          ),
+                          label: Text('Choose ${_headerType.toLowerCase()}'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryColor,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(double.infinity, 48),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                        if (_headerFile != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: borderColor),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _headerType == 'IMAGE'
+                                      ? Icons.image
+                                      : _headerType == 'VIDEO'
+                                          ? Icons.video_library
+                                          : Icons.insert_drive_file,
+                                  color: primaryColor,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Selected File',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600]),
+                                      ),
+                                      Text(
+                                        _headerFileName ??
+                                            _headerFile!.path.split('/').last,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w500),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  onPressed: () {
+                                    setState(() {
+                                      _headerFile = null;
+                                      _headerFileName = null;
+                                    });
+                                  },
+                                  color: Colors.red,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Body Card
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: primaryColor.withValues(
+                                  alpha: 0.1), // Fixed: replaced withOpacity
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.message,
+                                color: primaryColor, size: 20),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Body',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: borderColor),
+                        ),
+                        child: TextFormField(
+                          controller: _bodyController,
+                          maxLines: 8,
+                          decoration: InputDecoration(
+                            hintText:
+                                'Enter message body. Use {{1}}, {{2}} for variables.',
+                            hintStyle: TextStyle(color: Colors.grey[400]),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(12),
+                          ),
+                          validator: (v) => v!.isEmpty ? 'Required' : null,
+                          onChanged: (value) {
+                            setState(() {});
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Variables Card
+              if (extractVariables(_bodyController.text).isNotEmpty) ...[
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withValues(
+                                    alpha: 0.1), // Fixed: replaced withOpacity
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.format_list_numbered,
+                                  color: Colors.orange,
+                                  size:
+                                      20), // Fixed: changed from variables to format_list_numbered
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Sample Values for Variables',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        ..._buildVariableInputs(),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
               ],
-            ),
-            if (_headerType == 'TEXT') ...[
-              const SizedBox(height: 8),
-              TextFormField(
-                onChanged: (v) => _headerText = v,
-                decoration: const InputDecoration(labelText: 'Header Text'),
+
+              // Footer Card
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withValues(
+                                  alpha: 0.1), // Fixed: replaced withOpacity
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.text_snippet,
+                                color: Colors.purple, size: 20),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Footer (optional)',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: borderColor),
+                        ),
+                        child: TextFormField(
+                          controller: _footerController,
+                          maxLines: 2,
+                          decoration: InputDecoration(
+                            hintText: 'Add a footer message',
+                            hintStyle: TextStyle(color: Colors.grey[400]),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
+
+              const SizedBox(height: 16),
+
+              // Buttons Card
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withValues(
+                                  alpha: 0.1), // Fixed: replaced withOpacity
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.smart_button,
+                                color: Colors.blue, size: 20),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Buttons',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ButtonEditor(
+                        buttons: _buttons,
+                        onChanged: (updated) =>
+                            setState(() => _buttons = updated),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Submit Button
+              Container(
+                width: double.infinity,
+                height: 56,
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                child: ElevatedButton(
+                  onPressed: _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 3,
+                  ),
+                  child: const Text(
+                    'Submit to WhatsApp',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
             ],
-            if (_headerType == 'IMAGE') ...[
-              const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: _pickImage,
-                child: const Text('Choose Image'),
-              ),
-              if (_headerFile != null) Text('File: ${_headerFile!.path}'),
-            ],
-            const SizedBox(height: 24),
-            const Text('Body', style: TextStyle(fontWeight: FontWeight.bold)),
-            TextFormField(
-              controller: _bodyController,
-              maxLines: 8,
-              decoration: const InputDecoration(
-                hintText: 'Enter message body. Use {{1}}, {{2}} for variables.',
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) => v!.isEmpty ? 'Required' : null,
-              onChanged: (value) {
-                setState(() {}); // rebuild to show/hide variable inputs
-              },
-            ),
-            const SizedBox(height: 16),
-            const Text('Sample Values for Variables'),
-            ..._buildVariableInputs(),
-            const SizedBox(height: 24),
-            const Text('Footer (optional)',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            TextFormField(
-              controller: _footerController,
-              maxLines: 2,
-              decoration: const InputDecoration(hintText: 'Footer text'),
-            ),
-            const SizedBox(height: 24),
-            const Text('Buttons',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            ButtonEditor(
-              buttons: _buttons,
-              onChanged: (updated) => setState(() => _buttons = updated),
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: _submit,
-              child: const Text('Submit to WhatsApp'),
-            ),
-          ],
+          ),
         ),
       ),
     );

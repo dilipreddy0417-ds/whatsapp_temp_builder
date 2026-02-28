@@ -9,15 +9,29 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  
+  # Supabase for backend
   supabase_flutter: ^2.0.0
+  
+  # HTTP requests
   http: ^1.1.0
   http_parser: ^4.0.2
+  
+  # File picking and image picking
   image_picker: ^1.0.5
   file_picker: ^6.1.1
+  
+  # File handling
   path_provider: ^2.1.1
+  
+  # Environment variables
   flutter_dotenv: ^5.1.0
+  
+  # Date formatting
   intl: ^0.18.1
-  mime: ^1.0.4                 # added for MIME type detection
+  
+  # MIME type detection
+  mime: ^1.0.4
 
 dev_dependencies:
   flutter_test:

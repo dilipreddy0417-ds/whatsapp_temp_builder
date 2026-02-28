@@ -171,9 +171,14 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
 
       if (widget.template.headerMediaType == 'IMAGE' && mediaId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content:
-                  Text('No media ID available. Please recreate the template.')),
+          SnackBar(
+            content: const Text(
+                'No media ID available. Please recreate the template.'),
+            backgroundColor: Colors.orange, // Orange for warning
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
         return;
       }
@@ -218,7 +223,14 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Message sent successfully')),
+          SnackBar(
+            content: const Text('✅ Message sent successfully'),
+            backgroundColor: Colors.green, // Green for success
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 3),
+          ),
         );
         Navigator.pop(context);
       }
@@ -226,7 +238,14 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
       debugPrint('❌ Send error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
+          SnackBar(
+            content: Text('❌ Failed: $e'),
+            backgroundColor: Colors.red, // Red for error
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     }
@@ -237,6 +256,8 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Send: ${widget.template.name}'),
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline),
@@ -250,43 +271,102 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            TextFormField(
-              controller: _phoneController,
-              decoration: const InputDecoration(
-                labelText: 'Recipient Phone Number',
-                hintText: '+919876543210',
-                border: OutlineInputBorder(),
+            // Phone Number Field
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
               ),
-              validator: (v) => v!.isEmpty ? 'Required' : null,
+              child: TextFormField(
+                controller: _phoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Recipient Phone Number',
+                  hintText: '+919876543210',
+                  border: OutlineInputBorder(borderSide: BorderSide.none),
+                  contentPadding: EdgeInsets.all(16),
+                  prefixIcon: Icon(Icons.phone, color: Colors.teal),
+                ),
+                validator: (v) => v!.isEmpty ? 'Required' : null,
+              ),
             ),
+
             const SizedBox(height: 20),
-            const Text(
-              'Fill variable values:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+
+            // Variables Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: const Text(
+                'Fill variable values:',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.teal),
+              ),
             ),
+
             const SizedBox(height: 8),
-            const Text(
-              'Select text and use formatting buttons below, or type markers manually.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+
+            // Formatting Info
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Select text and use formatting buttons, or type markers manually.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF0D3D63)),
+                    ),
+                  ),
+                ],
+              ),
             ),
+
             const SizedBox(height: 12),
+
+            // Variable input fields with formatting toolbar
             ..._varControllers.entries.map((entry) {
               final varKey = entry.key;
               final controller = entry.value;
               final isFocused = _focusNodes[varKey]?.hasFocus ?? false;
 
               return Card(
+                elevation: 2,
                 margin: const EdgeInsets.symmetric(vertical: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 child: Padding(
-                  padding: const EdgeInsets.all(8.0),
+                  padding: const EdgeInsets.all(12.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        varKey,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.teal[100],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              varKey,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.teal,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 8),
                       TextFormField(
                         controller: controller,
                         focusNode: _focusNodes[varKey],
@@ -294,10 +374,15 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
                         minLines: 1,
                         decoration: InputDecoration(
                           hintText: 'Enter value for $varKey',
-                          border: const OutlineInputBorder(),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
                           suffixIcon: isFocused
                               ? PopupMenuButton<String>(
-                                  icon: const Icon(Icons.format_size),
+                                  icon: const Icon(Icons.format_size,
+                                      color: Colors.teal),
                                   tooltip: 'Formatting options',
                                   onSelected: (format) =>
                                       _applyFormatting(varKey, format),
@@ -351,20 +436,31 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
                         ),
                         validator: (v) => v!.isEmpty ? 'Required' : null,
                       ),
+
+                      // Quick format buttons (visible when field is focused)
                       if (isFocused) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
                         Row(
                           children: [
-                            _buildFormatButton(
-                                varKey, 'bold', Icons.format_bold),
+                            Expanded(
+                              child: _buildFormatButton(varKey, 'bold',
+                                  Icons.format_bold, Colors.black),
+                            ),
                             const SizedBox(width: 8),
-                            _buildFormatButton(
-                                varKey, 'italic', Icons.format_italic),
+                            Expanded(
+                              child: _buildFormatButton(varKey, 'italic',
+                                  Icons.format_italic, Colors.black),
+                            ),
                             const SizedBox(width: 8),
-                            _buildFormatButton(varKey, 'strikethrough',
-                                Icons.format_strikethrough),
+                            Expanded(
+                              child: _buildFormatButton(varKey, 'strikethrough',
+                                  Icons.format_strikethrough, Colors.black),
+                            ),
                             const SizedBox(width: 8),
-                            _buildFormatButton(varKey, 'monospace', Icons.code),
+                            Expanded(
+                              child: _buildFormatButton(varKey, 'monospace',
+                                  Icons.code, Colors.black),
+                            ),
                           ],
                         ),
                       ],
@@ -373,35 +469,48 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
                 ),
               );
             }),
+
             const SizedBox(height: 16),
+
+            // Preview Info
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: Colors.teal[50],
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
+                border: Border.all(color: Colors.teal.shade200),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                  Icon(Icons.preview, color: Colors.teal[700], size: 20),
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
-                      'Preview how your formatted text will appear. '
                       'The formatting markers (*, _, ~, `) will be converted by WhatsApp.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF0D3D63)),
+                      style: TextStyle(fontSize: 12, color: Color(0xFF004D40)),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 30),
+
+            const SizedBox(height: 24),
+
+            // Send Button
             ElevatedButton(
               onPressed: _send,
               style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 48),
+                minimumSize: const Size(double.infinity, 56),
+                backgroundColor: Colors.teal,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                elevation: 3,
               ),
-              child: const Text('Send Message'),
+              child: const Text(
+                'Send Message',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
@@ -409,16 +518,16 @@ class _SendTemplateScreenState extends State<SendTemplateScreen> {
     );
   }
 
-  Widget _buildFormatButton(String varKey, String format, IconData icon) {
-    return Expanded(
-      child: OutlinedButton.icon(
-        onPressed: () => _applyFormatting(varKey, format),
-        icon: Icon(icon, size: 16),
-        label: Text(format[0].toUpperCase() + format.substring(1)),
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-        ),
+  Widget _buildFormatButton(
+      String varKey, String format, IconData icon, Color color) {
+    return OutlinedButton(
+      onPressed: () => _applyFormatting(varKey, format),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        side: BorderSide(color: Colors.teal.shade200),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
+      child: Icon(icon, size: 18, color: Colors.teal),
     );
   }
 }

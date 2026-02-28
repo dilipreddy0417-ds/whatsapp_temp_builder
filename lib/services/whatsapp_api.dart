@@ -14,7 +14,8 @@ class WhatsAppApiService {
 
   // ========== MEDIA UPLOAD FOR SENDING MESSAGES ==========
   // Use this for uploading media to be used in messages (not templates)
-  Future<String> uploadMediaForMessage(File file, String messagingProduct) async {
+  Future<String> uploadMediaForMessage(
+      File file, String messagingProduct) async {
     var request = http.MultipartRequest(
       'POST',
       Uri.parse('https://graph.facebook.com/v23.0/$phoneNumberId/media'),
@@ -59,7 +60,7 @@ class WhatsAppApiService {
         'file_type': fileType,
       }),
     );
-    
+
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return data['id']; // Returns upload session ID
@@ -71,10 +72,10 @@ class WhatsAppApiService {
   // Step 2: Upload file to session and get handle
   Future<String> uploadFileToSession(String sessionId, File file) async {
     final url = Uri.parse('https://graph.facebook.com/v23.0/$sessionId');
-    
+
     // Read file as bytes
     final fileBytes = await file.readAsBytes();
-    
+
     final response = await http.post(
       url,
       headers: {
@@ -84,32 +85,73 @@ class WhatsAppApiService {
       },
       body: fileBytes,
     );
-    
+
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return data['h']; // Returns the handle (e.g., "4:4:MTAwMDAyMTY4OC5wbmc=...")
+      return data[
+          'h']; // Returns the handle (e.g., "4:MTAwMDAyMTY4OC5wbmc=...")
     } else {
       throw Exception('File upload to session failed: ${response.body}');
     }
   }
 
-  // Convenience method: complete resumable upload process
+  // Convenience method: upload image and get handle for template header
   Future<String> uploadImageForTemplateHeader(File imageFile) async {
     final fileName = imageFile.path.split('/').last;
     final fileLength = await imageFile.length();
     final mimeType = lookupMimeType(imageFile.path) ?? 'image/jpeg';
-    
-    debugPrint('📤 Creating upload session for: $fileName');
+
+    debugPrint('📤 Creating upload session for image: $fileName');
     final sessionId = await createUploadSession(
       fileName: fileName,
       fileLength: fileLength,
       fileType: mimeType,
     );
-    
-    debugPrint('📤 Uploading file to session: $sessionId');
+
+    debugPrint('📤 Uploading image to session: $sessionId');
     final handle = await uploadFileToSession(sessionId, imageFile);
-    
-    debugPrint('✅ Got header handle: $handle');
+
+    debugPrint('✅ Got image handle: $handle');
+    return handle;
+  }
+
+  // Upload video for template header
+  Future<String> uploadVideoForTemplateHeader(File videoFile) async {
+    final fileName = videoFile.path.split('/').last;
+    final fileLength = await videoFile.length();
+    final mimeType = lookupMimeType(videoFile.path) ?? 'video/mp4';
+
+    debugPrint('📤 Creating upload session for video: $fileName');
+    final sessionId = await createUploadSession(
+      fileName: fileName,
+      fileLength: fileLength,
+      fileType: mimeType,
+    );
+
+    debugPrint('📤 Uploading video to session: $sessionId');
+    final handle = await uploadFileToSession(sessionId, videoFile);
+
+    debugPrint('✅ Got video handle: $handle');
+    return handle;
+  }
+
+  // Upload document for template header
+  Future<String> uploadDocumentForTemplateHeader(File documentFile) async {
+    final fileName = documentFile.path.split('/').last;
+    final fileLength = await documentFile.length();
+    final mimeType = lookupMimeType(documentFile.path) ?? 'application/pdf';
+
+    debugPrint('📤 Creating upload session for document: $fileName');
+    final sessionId = await createUploadSession(
+      fileName: fileName,
+      fileLength: fileLength,
+      fileType: mimeType,
+    );
+
+    debugPrint('📤 Uploading document to session: $sessionId');
+    final handle = await uploadFileToSession(sessionId, documentFile);
+
+    debugPrint('✅ Got document handle: $handle');
     return handle;
   }
 
@@ -205,5 +247,55 @@ class WhatsAppApiService {
     if (response.statusCode != 200) {
       throw Exception('Send failed: ${response.body}');
     }
+  }
+
+  // ========== SEND TEMPLATE MESSAGE WITH MEDIA (Convenience method) ==========
+  Future<void> sendTemplateMessageWithMedia({
+    required String to,
+    required String templateName,
+    required String languageCode,
+    String? headerMediaType,
+    String? mediaId,
+    String? mediaLink,
+    List<String> bodyVariables = const [],
+  }) async {
+    List<Map<String, dynamic>> components = [];
+
+    // Header component (if media is provided)
+    if (headerMediaType != null && (mediaId != null || mediaLink != null)) {
+      Map<String, dynamic> mediaObj = {};
+      if (mediaId != null && mediaId.isNotEmpty) {
+        mediaObj = {"id": mediaId};
+      } else if (mediaLink != null && mediaLink.isNotEmpty) {
+        mediaObj = {"link": mediaLink};
+      }
+
+      components.add({
+        "type": "header",
+        "parameters": [
+          {
+            "type": headerMediaType.toLowerCase(),
+            headerMediaType.toLowerCase(): mediaObj,
+          }
+        ],
+      });
+    }
+
+    // Body component with variables
+    if (bodyVariables.isNotEmpty) {
+      List<Map<String, dynamic>> bodyParams =
+          bodyVariables.map((val) => {"type": "text", "text": val}).toList();
+      components.add({
+        "type": "body",
+        "parameters": bodyParams,
+      });
+    }
+
+    await sendTemplateMessage(
+      to: to,
+      templateName: templateName,
+      languageCode: languageCode,
+      components: components,
+    );
   }
 }
